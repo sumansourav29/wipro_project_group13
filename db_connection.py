@@ -6,10 +6,13 @@ def get_connection():
         user=st.secrets["SF_USER"],
         password=st.secrets["SF_PASSWORD"],
         account=st.secrets["SF_ACCOUNT"],
-        warehouse="energy_wh"
     )
 
-    conn.cursor().execute("USE DATABASE energy_dw")
-    conn.cursor().execute("USE SCHEMA analytics")
+    # Force everything from Python side
+    cursor = conn.cursor()
+    cursor.execute("USE ROLE ACCOUNTADMIN")
+    cursor.execute("USE WAREHOUSE COMPUTE_WH")
+    cursor.execute("USE DATABASE ENERGY_DW")
+    cursor.execute("USE SCHEMA ANALYTICS")
 
     return conn

@@ -1,15 +1,15 @@
 import snowflake.connector
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import streamlit as st
 
 def get_connection():
-    return snowflake.connector.connect(
-        user=os.getenv("SF_USER"),
-        password=os.getenv("SF_PASSWORD"),
-        account=os.getenv("SF_ACCOUNT"),
-        warehouse="energy_wh",
-        database="energy_dw",
-        schema="analytics"
+    conn = snowflake.connector.connect(
+        user=st.secrets["SF_USER"],
+        password=st.secrets["SF_PASSWORD"],
+        account=st.secrets["SF_ACCOUNT"],
+        warehouse="energy_wh"
     )
+
+    conn.cursor().execute("USE DATABASE energy_dw")
+    conn.cursor().execute("USE SCHEMA analytics")
+
+    return conn

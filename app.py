@@ -1,99 +1,48 @@
-import streamlit as st
-import pandas as pd
-from db_connection import get_connection
+def load_csv_if_empty(conn):
+    import pandas as pd
 
-st.set_page_config(
-    page_title="Energy Consumption Dashboard",
-    layout="wide"
-)
+    check_query = "SELECT COUNT(*) FROM FACT_ENERGY"
+    count = pd.read_sql(check_query, conn).iloc[0, 0]
 
-st.title("⚡ Energy Consumption Monitoring Dashboard")
+    if count == 0:
+        df = pd.read_csv("energy_consumption_dataset.csv")
+        df.columns = df.columns.str.strip()
 
-# -----------------------------------
-# Database Connection
-# -----------------------------------
-try:
-    conn = get_connection()
-except Exception as e:
-    st.error("❌ Database Connection Failed")
-    st.error(str(e))
-    st.stop()
+        df["solar_flag"] = df["Current Solar"].apply(lambda x: 1 if x > 0 else 0)
 
-# -----------------------------------
-# Yearly Electricity Usage
-# -----------------------------------
-st.subheader("📊 Yearly Electricity Usage")
+        df = df.rename(columns={
+            "Department": "DEPARTMENT_NAME",
+            "Site Name": "SITE_NAME",
+            "Year": "YEAR",
+            "Electric Utility": "ELECTRIC_UTILITY",
+            "Electricity Usage": "ELECTRICITY_USAGE",
+            "Peak Electric Demand": "PEAK_DEMAND",
+            "Natural Gas Usage": "NATURAL_GAS_USAGE",
+            "Energy Use Intensity": "ENERGY_USE_INTENSITY"
+        })
 
-query_yearly = """
-SELECT year, SUM(electricity_usage) AS total_usage
-FROM fact_energy
-GROUP BY year
-ORDER BY year
-"""
+        insert_query = """
+        INSERT INTO FACT_ENERGY
+        (DEPARTMENT_NAME, SITE_NAME, YEAR, ELECTRIC_UTILITY,
+         ELECTRICITY_USAGE, PEAK_DEMAND, NATURAL_GAS_USAGE,
+         ENERGY_USE_INTENSITY, SOLAR_FLAG)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
 
-try:
-    df_yearly = pd.read_sql(query_yearly, conn)
+        cursor = conn.cursor()
 
-    if df_yearly.empty:
-        st.warning("No data found in fact_energy table.")
-    else:
-        df_yearly.columns = df_yearly.columns.str.upper()
-        st.line_chart(df_yearly.set_index("YEAR"))
+        for _, row in df.iterrows():
+            cursor.execute(insert_query, (
+                row["DEPARTMENT_NAME"],
+                row["SITE_NAME"],
+                int(row["YEAR"]),
+                row["ELECTRIC_UTILITY"],
+                float(row["ELECTRICITY_USAGE"]),
+                float(row["PEAK_DEMAND"]),
+                float(row["NATURAL_GAS_USAGE"]),
+                float(row["ENERGY_USE_INTENSITY"]),
+                int(row["solar_flag"])
+            ))
 
-except Exception as e:
-    st.error("Error fetching yearly data")
-    st.error(str(e))
-
-
-# -----------------------------------
-# Utility-wise Usage
-# -----------------------------------
-st.subheader("🏢 Electricity Usage by Utility")
-
-query_utility = """
-SELECT electric_utility,
-       SUM(electricity_usage) AS total_usage
-FROM fact_energy
-GROUP BY electric_utility
-ORDER BY total_usage DESC
-"""
-
-try:
-    df_utility = pd.read_sql(query_utility, conn)
-
-    if not df_utility.empty:
-        df_utility.columns = df_utility.columns.str.upper()
-        st.bar_chart(df_utility.set_index("ELECTRIC_UTILITY"))
-
-except Exception as e:
-    st.error("Error fetching utility data")
-    st.error(str(e))
-
-
-# -----------------------------------
-# Top 10 Buildings
-# -----------------------------------
-st.subheader("🏆 Top 10 Buildings by Electricity Usage")
-
-query_top = """
-SELECT site_name,
-       SUM(electricity_usage) AS total_usage
-FROM fact_energy
-GROUP BY site_name
-ORDER BY total_usage DESC
-LIMIT 10
-"""
-
-try:
-    df_top = pd.read_sql(query_top, conn)
-
-    if not df_top.empty:
-        st.dataframe(df_top)
-
-except Exception as e:
-    st.error("Error fetching ranking data")
-    st.error(str(e))
-
-
-# Close Connection
-conn.close()
+        conn.commit()
+        cursor.close()

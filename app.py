@@ -9,56 +9,54 @@ st.title("⚡ Energy Consumption Monitoring Dashboard")
 
 
 # --------------------------------------------------
-# Auto Load CSV Into Snowflake If Table Is Empty
+# Auto Load CSV If Table Is Empty
 # --------------------------------------------------
 def load_csv_if_empty(conn):
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM FACT_ENERGY")
-        count = cursor.fetchone()[0]
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM FACT_ENERGY")
+    count = cursor.fetchone()[0]
 
-        if count == 0:
-            st.info("Loading dataset into Snowflake...")
+    if count == 0:
+        st.info("Loading dataset into Snowflake...")
 
-            file_path = os.path.join(os.getcwd(), "energy_consumption_dataset.csv")
+        file_path = os.path.join(os.getcwd(), "energy consumption dataset.csv")
 
-            df = pd.read_csv(file_path)
-            df.columns = df.columns.str.strip()
-            df = df.fillna(0)
+        df = pd.read_csv(file_path)
+        df.columns = df.columns.str.strip()
+        df = df.fillna(0)
 
-            df["SOLAR_FLAG"] = df["Current Solar"].apply(lambda x: 1 if x > 0 else 0)
+        # Force numeric year
+        df["YEAR"] = pd.to_numeric(df["Year"], errors="coerce")
+        df = df.dropna(subset=["YEAR"])
 
-            df = df.rename(columns={
-                "Department": "DEPARTMENT_NAME",
-                "Site Name": "SITE_NAME",
-                "Year": "YEAR",
-                "Electric Utility": "ELECTRIC_UTILITY",
-                "Electricity Usage": "ELECTRICITY_USAGE",
-                "Peak Electric Demand": "PEAK_DEMAND",
-                "Natural Gas Usage": "NATURAL_GAS_USAGE",
-                "Energy Use Intensity": "ENERGY_USE_INTENSITY"
-            })
+        df["SOLAR_FLAG"] = df["Current Solar"].apply(lambda x: 1 if x > 0 else 0)
 
-            df = df[[
-                "DEPARTMENT_NAME",
-                "SITE_NAME",
-                "YEAR",
-                "ELECTRIC_UTILITY",
-                "ELECTRICITY_USAGE",
-                "PEAK_DEMAND",
-                "NATURAL_GAS_USAGE",
-                "ENERGY_USE_INTENSITY",
-                "SOLAR_FLAG"
-            ]]
+        df = df.rename(columns={
+            "Department": "DEPARTMENT_NAME",
+            "Site Name": "SITE_NAME",
+            "Electric Utility": "ELECTRIC_UTILITY",
+            "Electricity Usage": "ELECTRICITY_USAGE",
+            "Peak Electric Demand": "PEAK_DEMAND",
+            "Natural Gas Usage": "NATURAL_GAS_USAGE",
+            "Energy Use Intensity": "ENERGY_USE_INTENSITY"
+        })
 
-            write_pandas(conn, df, "FACT_ENERGY")
-            st.success("Dataset successfully loaded!")
+        df = df[[
+            "DEPARTMENT_NAME",
+            "SITE_NAME",
+            "YEAR",
+            "ELECTRIC_UTILITY",
+            "ELECTRICITY_USAGE",
+            "PEAK_DEMAND",
+            "NATURAL_GAS_USAGE",
+            "ENERGY_USE_INTENSITY",
+            "SOLAR_FLAG"
+        ]]
 
-        cursor.close()
+        write_pandas(conn, df, "FACT_ENERGY")
+        st.success("Dataset successfully loaded!")
 
-    except Exception as e:
-        st.error("Error loading dataset")
-        st.error(str(e))
+    cursor.close()
 
 
 # --------------------------------------------------
@@ -74,14 +72,17 @@ except Exception as e:
 
 
 # --------------------------------------------------
-# Yearly Electricity Usage
+# Yearly Electricity Usage (FIXED)
 # --------------------------------------------------
 st.subheader("📊 Yearly Electricity Usage")
 
 query_yearly = """
-SELECT YEAR, SUM(ELECTRICITY_USAGE) AS TOTAL_USAGE
+SELECT 
+    CAST(YEAR AS INTEGER) AS YEAR,
+    SUM(ELECTRICITY_USAGE) AS TOTAL_USAGE
 FROM FACT_ENERGY
-GROUP BY YEAR
+WHERE YEAR IS NOT NULL
+GROUP BY CAST(YEAR AS INTEGER)
 ORDER BY YEAR
 """
 
@@ -89,8 +90,10 @@ try:
     df_yearly = pd.read_sql(query_yearly, conn)
 
     if df_yearly.empty:
-        st.warning("No data found in FACT_ENERGY table.")
+        st.warning("No valid yearly data found.")
     else:
+        st.write("Debug Data:")
+        st.dataframe(df_yearly)
         st.line_chart(df_yearly.set_index("YEAR"))
 
 except Exception as e:
